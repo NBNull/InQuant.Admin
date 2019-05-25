@@ -1,0 +1,90 @@
+﻿<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+
+    <link rel="shortcut icon" type="image/ico" href="/images/favicon.ico">
+    <link rel="stylesheet" href="/css/font.css">
+    <link rel="stylesheet" href="~/lib/layui/css/layui.css">
+    <link rel="stylesheet" href="~/css/login.css">
+
+    <title>登录InQuant后台管理系统</title>
+</head>
+<body>
+    <partial name="_CookieConsentPartial" />
+    <div class="layadmin-user-login layadmin-user-display-show" id="LAY-user-login" style="display: none;">
+
+        <div class="layadmin-user-login-main">
+            <div class="layadmin-user-login-box layadmin-user-login-header">
+                <h2>InQuant.com</h2>
+                <p>登录后台管理系统</p>
+            </div>
+
+            <div class="layadmin-user-login-box layadmin-user-login-body layui-form">
+                <div class="layui-form-item">
+                    <label class="layadmin-user-login-icon layui-icon layui-icon-username" for="LAY-user-login-username"></label>
+                    <input type="text" name="userName" id="LAY-user-login-username" lay-verify="userName" placeholder="用户名" class="layui-input">
+                </div>
+                <div class="layui-form-item">
+                    <label class="layadmin-user-login-icon layui-icon layui-icon-password" for="LAY-user-login-password"></label>
+                    <input type="password" name="password" id="LAY-user-login-password" lay-verify="pass" placeholder="密码" class="layui-input">
+                </div>
+                <div class="layui-form-item">
+                    <button class="layui-btn layui-btn-fluid" lay-submit lay-filter="LAY-user-login-submit">登 入</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="/lib/layui/layui.js" charset="utf-8"></script>
+    <script>
+        layui.config({
+            base: '/js/modules/'
+        }).use(['form', 'http', 'auth', 'common'], function () {
+            var form = layui.form,
+                http = layui.http,
+                auth = layui.auth,
+                common = layui.common,
+                $ = layui.$;
+
+            form.verify({
+                userName: function (value, item) {
+                    if ((value || '').trim().length === 0) return '用户名不能为空';
+                }
+                , pass: function (value, item) {
+                    if ((value || '').trim().length === 0) return '密码不能为空';
+                }
+            });
+
+            form.on('submit(LAY-user-login-submit)', function (fm) {
+                http.post('/api/admin/user/token', fm.field, function (data) {
+                    auth.setAuth(data.userId, data.token);
+
+                    var returnUrl = common.getUrlParameter('returnUrl');
+                    if ((returnUrl || '').trim().length < 0) {
+                        returnUrl = "/home/index";
+                    }
+
+                    location.href = returnUrl;
+                });
+
+                return true;
+            });
+
+            $('#LAY-user-login-password').on('keydown', function (e) {
+                if (e.keyCode == 13) {
+                    $('button[lay-filter="LAY-user-login-submit"]').click();
+                }
+            });
+        });
+
+
+    </script>
+</body>
+</html>

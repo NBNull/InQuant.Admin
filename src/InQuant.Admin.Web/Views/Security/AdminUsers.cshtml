@@ -1,0 +1,311 @@
+﻿@using InQuant.Authorization.Permissions;
+@inject IPermissionHelper permissionHelper
+
+@{
+    ViewData["Title"] = "后台用户列表";
+    Layout = "~/Views/Shared/_ContentLayout.cshtml";
+
+    var hasManageAdminUser = await permissionHelper.HasPermission("ManageAdminUser");
+    var hasChangePwd = await permissionHelper.HasPermission("ChangePassword");
+}
+
+@section Head{
+    <link rel="stylesheet" href="~/css/multdropdown.css">
+}
+@section Scripts{
+    <script>
+        layui.config({
+            base: '/js/modules/'
+        }).use(['form', 'common', 'table', 'layer', 'http', 'multdropdown'], function () {
+            var $ = layui.$
+                , form = layui.form
+                , http = layui.http
+                , table = layui.table
+                , layer = layui.layer
+                , formSelects = layui.multdropdown
+                , common = layui.common;
+
+            function SearchModel() {
+                var self = this;
+
+                self.userName = ko.observable();
+            };
+
+            function EditModel() {
+                var self = this;
+                self.id = ko.observable(0);
+                self.userName = ko.observable();
+                self.password = ko.observable();
+                self.isAdmin = ko.observable(false);
+                self.roleIds = ko.observableArray();
+                self.roleName = ko.observable();
+            }
+
+            function ChangePwdModel() {
+                var self = this;
+                self.userId = ko.observable();
+                self.userName = ko.observable();
+                self.newPassword = ko.observable();
+            }
+
+            var viewModel = {
+                search: ko.observable(new SearchModel()),
+                edit: ko.observable(new EditModel()),
+                changePwd: ko.observable(new ChangePwdModel()),
+                allRoles: ko.observableArray(),
+
+                getSearchModel: function () {
+                    return ko.mapping.toJS(this.search);
+                },
+
+                init: function () {
+                    formSelects.data('roleIds', 'server', {
+                        url: '/api/role/search',
+                        type: 'get',
+                        data: { page: 1, limit: 32767 },
+                        keyName: 'name',
+                        keyVal: 'id',
+                        direction: 'auto',
+                        beforeSuccess: function (id, url, searchVal, result) {
+                            if (!result) return {};
+                            return {
+                                code: result.ret,
+                                msg: result.errMsg,
+                                data: result.data.result
+                            };
+                        }
+                    });
+                },
+                reload: function (toFirst) {
+                    common.reloadTable('table', this.getSearchModel(), toFirst);
+                }
+            };
+            ko.applyBindings(viewModel);
+            viewModel.init();
+
+            common.fixKOBindIssue(form);
+
+            common.renderTable({
+                id: 'table',
+                elem: '#table',
+                url: '/api/admin/user/search',
+                height: 'full-170',
+                cellMinWidth: '100',
+                cols: [[
+                    { checkbox: true },
+                    { title: '用户名', field: 'userName', width: 180 },
+                    { title: '管理员', field: 'isAdminDisplay', width: 180 },
+                    { title: '修改时间', field: 'lastModifiedTime', width: 180 },
+                    { title: '修改人', field: 'lastModifierName', width: 150 },
+                    { title: '角色', field: 'roleName', width: 350 },
+                    { title: "操作", width: 220, align: "center", toolbar: "#toolbar" }
+                ]],
+                where: viewModel.getSearchModel()
+            })
+
+            //监听搜索
+            form.on('submit(search)', function (data) {
+                var field = data.field;
+                viewModel.reload(true);
+            });
+
+            function showEditDialg(isCreate) {
+                layer.open({
+                    type: 1
+                    , title: isCreate ? '新增用户' : '编辑用户'
+                    , content: $('#edit_dialog')
+                    , area: ['50%', '50%']
+                    , btn: ['保存', '取消']
+                    , success: function (layero, index) {
+                        form.render();
+                    }
+                    , yes: function (index, layero) {
+                        var m = ko.mapping.toJS(viewModel.edit);
+
+                        var roleIds = formSelects.value('roleIds', 'val');
+
+                        $.extend(m, { roleIds: roleIds });
+
+                        http.post('/api/admin/user/update', m, function (data) {
+                            layer.closeAll();
+                            viewModel.reload(true);
+                            layer.msg('保存成功');
+                        });
+                    }
+                });
+            }
+
+            //事件
+            var active = {
+                createRole: function () {
+                    viewModel.edit(new EditModel());
+                    formSelects.value('roleIds', []);
+                    showEditDialg(true);
+                },
+                batchdel: function () {
+                    var checkStatus = table.checkStatus('table')
+                        , checkData = checkStatus.data;
+
+                    if (checkData.length === 0) {
+                        return layer.msg('请选择数据');
+                    }
+
+                    layer.confirm('确定删除吗？', function (index) {
+                        http.get('/api/admin/user/BatchDelete', { userIds: checkData.map(function (item) { return item.id; }).join(',') }, function () {
+                            layer.msg('删除成功');
+                            viewModel.reload(true);
+                        })
+                    });
+                },
+                reload: function () {
+                    viewModel.reload();
+                }
+            }
+
+            $('.layui-btn.menu-item').on('click', function () {
+                var type = $(this).data('type');
+                active[type] ? active[type].call(this) : '';
+            });
+
+            table.on('tool(table)', function (obj) {
+                var data = obj.data;
+                var layEvent = obj.event;
+                var tr = obj.tr;
+
+                if (layEvent == 'del') {
+                    http.get('/api/admin/user/delete', { userId: data.id }, function () {
+                        viewModel.reload();
+                        layer.msg('删除成功');
+                    });
+                }
+                else if (layEvent == 'edit') {
+                    viewModel.edit().id(data.id);
+                    viewModel.edit().userName(data.userName);
+                    viewModel.edit().isAdmin(data.isAdmin);
+                    viewModel.edit().password('');
+                    viewModel.edit().roleIds(ko.mapping.fromJS(data.roleIds));
+                    viewModel.edit().roleName(data.roleName);
+
+                    formSelects.value('roleIds', data.roleIds);
+
+                    showEditDialg(false);
+                }
+                else if (layEvent == 'changePwd') {
+                    viewModel.changePwd().userId(data.id);
+                    viewModel.changePwd().newPassword('');
+                    viewModel.changePwd().userName(data.userName);
+                    layer.open({
+                        type: 1
+                        , title: '修改密码'
+                        , content: $('#change_pwd_dialog')
+                        , area: ['30%', '30%']
+                        , btn: ['保存', '取消']
+                        , success: function (layero, index) {
+                            form.render();
+                        }
+                        , yes: function (index, layero) {
+                            var m = ko.mapping.toJS(viewModel.changePwd);
+                            
+                            http.post('/api/admin/user/ChangePassword', m, function (data) {
+                                layer.closeAll();
+                                layer.msg('修改成功');
+                            });
+                        }
+                    });
+                }
+            });
+        });
+
+    </script>
+}
+
+<div class="layui-form layui-card-header layuiadmin-card-header-auto" data-bind="with: search">
+    <div class="layui-form-item">
+        <div class="layui-inline">
+            <label class="layui-form-label">用户名：</label>
+            <div class="layui-input-block">
+                <input type="text" data-bind="value: userName" placeholder="" autocomplete="off" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-inline">
+            <button class="layui-btn layuiadmin-btn-forum-list" lay-submit lay-filter="search">
+                <i class="layui-icon layui-icon-search layuiadmin-button-btn"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="layui-card-body">
+    <div class="menus">
+        @if (hasManageAdminUser)
+        {
+            <button class="layui-btn menu-item layui-btn-sm" data-type="createRole"><i class="layui-icon">&#xe654;</i>新增</button>
+            <button class="layui-btn menu-item layui-btn-sm layui-btn-danger" data-type="batchdel"><i class="layui-icon">&#xe640;</i>删除</button>
+        }
+        <button class="layui-btn menu-item layui-btn-sm" data-type="reload"><i class="layui-icon">&#xe669;</i>刷新</button>
+    </div>
+
+    <table id="table" lay-filter="table"></table>
+
+    <script type="text/html" id="toolbar">
+        @if (hasManageAdminUser)
+        {
+            <a class="layui-btn layui-btn-xs" lay-event="edit"><i class="layui-icon layui-icon-edit"></i>编辑</a>
+            <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del"><i class="layui-icon layui-icon-delete"></i>删除</a>
+        }
+        @if (hasChangePwd)
+        {
+            <a class="layui-btn layui-btn-xs" lay-event="changePwd">修改密码</a>
+        }
+
+    </script>
+</div>
+
+
+<div id="edit_dialog" class="layui-form dialog">
+    <div class="layui-form-item">
+        <div class="layui-inline">
+            <label class="layui-form-label">用户名：</label>
+            <div class="layui-input-block">
+                <input type="text" data-bind="value: edit().userName" placeholder="" autocomplete="off" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-inline">
+            <input type="checkbox" title="管理员" lay-skin="primary" data-bind="checked: edit().isAdmin,checkedValue: true">
+        </div>
+    </div>
+    <div class="layui-form-item" data-bind="visible: !edit().id || edit().id()==0">
+        <div class="layui-inline">
+            <label class="layui-form-label">密码：</label>
+            <div class="layui-input-block">
+                <input type="password" data-bind="value: edit().password" placeholder="" autocomplete="off" class="layui-input">
+            </div>
+        </div>
+    </div>
+
+    <div class="layui-form-item ">
+        <label class="layui-form-label">角色：</label>
+        <div class="layui-input-block">
+            <select xm-select="roleIds"></select>
+        </div>
+    </div>
+</div>
+
+<div id="change_pwd_dialog" class="layui-form dialog">
+    <div class="layui-form-item">
+        <div class="layui-inline">
+            <label class="layui-form-label">用户名：</label>
+            <div class="layui-input-block">
+                <input type="text" readonly data-bind="value: changePwd().userName" placeholder="" autocomplete="off" class="layui-input">
+            </div>
+        </div>
+    </div>
+    <div class="layui-form-item">
+        <div class="layui-inline">
+            <label class="layui-form-label">新密码：</label>
+            <div class="layui-input-block">
+                <input type="password" data-bind="value: changePwd().newPassword" placeholder="" autocomplete="off" class="layui-input">
+            </div>
+        </div>
+    </div>    
+</div>

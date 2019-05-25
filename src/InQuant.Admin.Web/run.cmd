@@ -1,0 +1,1 @@
+dotnet -d run InQuant.Admin.Web.csproj --urls http://localhost:5000  --no-incremental

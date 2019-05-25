@@ -1,0 +1,283 @@
+﻿@using InQuant.Authorization.Permissions;
+@inject IPermissionHelper permissionHelper
+
+@{
+    ViewData["Title"] = "角色列表";
+    Layout = "~/Views/Shared/_ContentLayout.cshtml";
+
+    var hasManageRole = await permissionHelper.HasPermission("ManageRole");
+}
+
+@section Head{
+
+}
+@section Scripts{
+    <script>
+        layui.config({
+            base: '/js/modules/'
+        }).use(['form', 'common', 'table', 'layer', 'http'], function () {
+            var $ = layui.$
+                , form = layui.form
+                , http = layui.http
+                , table = layui.table
+                , layer = layui.layer
+                , common = layui.common;
+
+            function SearchModel() {
+                var self = this;
+
+                self.roleName = ko.observable();
+            };
+
+            function EditModel() {
+                var self = this;
+                self.id = ko.observable();
+                self.name = ko.observable();
+                self.permissionNames = ko.observableArray();
+            }
+
+            var viewModel = {
+                search: ko.observable(new SearchModel()),
+                edit: ko.observable(new EditModel()),
+                allPermissions: ko.observableArray(),
+                permissionMap: null,
+                getSearchModel: function () {
+                    return ko.mapping.toJS(this.search);
+                },
+                loadPermissions: function () {
+                    var self = this;
+                    http.get('/api/role/GetAllPermissions', function (data) {
+                        self.allPermissions(data);
+                        var ps = data.reduce(function (s, item) { return s.concat(item.permissions); }, []);
+                        self.permissionMap = {};
+
+                        var getOrCreate = function (item) {
+                            if (!(item.name in self.permissionMap)) {
+                                self.permissionMap[item.name] = {
+                                    obj: item,
+                                    implied: [],//被依赖
+                                    impliedBy: []//依赖
+                                };
+                            }
+                            return self.permissionMap[item.name];
+                        }
+
+                        layui.each(ps, function (idx, item) {
+                            var cv = getOrCreate(item);
+                            layui.each(item.impliedBy, function (idx1, item1) {
+                                var v = getOrCreate(item1);
+                                cv.impliedBy.push(item1);
+                                v.implied.push(item);
+                            });
+                        });
+                    });
+                },
+                init: function () {
+                    this.loadPermissions();
+                },
+                reload: function (toFirst) {
+                    common.reloadTable('table', this.getSearchModel(), toFirst);
+                }
+            };
+            ko.applyBindings(viewModel);
+            viewModel.init();
+
+            common.fixKOBindIssue(form);
+
+            common.renderTable({
+                id: 'table',
+                elem: '#table',
+                url: '/api/role/search',
+                height: 'full-170',
+                cellMinWidth: '100',
+                cols: [[
+                    { checkbox: true },
+                    { title: '角色名称', field: 'name', width: 250 },
+                    { title: "操作", width: 150, align: "center", toolbar: "#toolbar" }
+                ]],
+                where: viewModel.getSearchModel()
+            })
+
+            //监听搜索
+            form.on('submit(search)', function (data) {
+                var field = data.field;
+                viewModel.reload(true);
+            });
+
+            function showEditDialg(isCreate) {
+                var msg = isCreate ? '新增' : '编辑';
+                layer.open({
+                    type: 1
+                    , title: msg + '角色'
+                    , content: $('#edit_dialog')
+                    , area: ['70%', '70%']
+                    , btn: ['保存', '取消']
+                    , success: function (layero, index) {
+                        form.render();
+                    }
+                    , yes: function (index, layero) {
+                        var m = ko.mapping.toJS(viewModel.edit);
+                        http.post('/api/role/update', m, function (data) {
+                            layer.closeAll();
+                            viewModel.reload(true);
+                            layer.msg(msg + '成功');
+                        });
+                    }
+                });
+            }
+
+            //事件
+            var active = {
+                createRole: function () {
+                    viewModel.edit(new EditModel());
+                    showEditDialg(true);
+                },
+                batchdel: function () {
+                    var checkStatus = table.checkStatus('table')
+                        , checkData = checkStatus.data;
+
+                    if (checkData.length === 0) {
+                        return layer.msg('请选择数据');
+                    }
+
+                    layer.confirm('确定删除吗？', function (index) {
+                        http.get('/api/role/BatchDelete', { ids: checkData.map(function (item) { return item.id; }).join(',') }, function () {
+                            layer.msg('删除成功');
+                            viewModel.reload(true);
+                        })
+                    });
+                },
+                reload: function () {
+                    viewModel.reload();
+                }
+            }
+
+            $('.layui-btn.menu-item').on('click', function () {
+                var type = $(this).data('type');
+                active[type] ? active[type].call(this) : '';
+            });
+
+            function checkPermission(p, checked) {
+                var v = viewModel.permissionMap[p.name];
+                if (!v) return;
+
+                if (checked) {
+                    if (viewModel.edit().permissionNames.indexOf(p.name) == -1)
+                        viewModel.edit().permissionNames.push(p.name);
+                }
+                else viewModel.edit().permissionNames.remove(p.name);
+
+                $('input[name="' + p.name + '"]').prop('checked', checked);
+
+                if (checked) {
+                    var impliedBy = v.impliedBy;
+                    layui.each(impliedBy, function (idx, item) {
+                        checkPermission(item, true);
+                    })
+                }
+                else {
+                    var implied = v.implied;
+                    layui.each(implied, function (idx, item) {
+                        checkPermission(item, false);
+                    })
+                }
+            }
+
+            form.on('checkbox(permission-check)', function (data) {
+                checkPermission(viewModel.permissionMap[data.value].obj, data.elem.checked);
+                form.render();
+            });
+
+            table.on('tool(table)', function (obj) {
+                var data = obj.data;
+                var layEvent = obj.event;
+                var tr = obj.tr;
+
+                if (layEvent == 'del') {
+                    http.get('/api/role/delete', { roleId: data.id }, function () {
+                        viewModel.reload();
+                        layer.msg('删除成功');
+                    });
+                }
+                else if (layEvent == 'edit') {
+                    http.get('/api/role/GetRolePermissions', { roleId: data.id }, function (ret) {                        
+                        viewModel.edit().id(data.id);
+                        viewModel.edit().name(data.name);
+                        viewModel.edit().permissionNames.removeAll();
+                        layui.each(ret, function (idx, item) {
+                            viewModel.edit().permissionNames.push(item.name);
+                        });
+                        //console.log(ko.mapping.toJS(viewModel.edit));
+                        showEditDialg(false);
+                    })
+                }
+            });
+        });
+
+    </script>
+}
+
+<div class="layui-form layui-card-header layuiadmin-card-header-auto" data-bind="with: search">
+    <div class="layui-form-item">
+        <div class="layui-inline">
+            <label class="layui-form-label">角色名称</label>
+            <div class="layui-input-block">
+                <input type="text" data-bind="value: roleName" placeholder="请输入" autocomplete="off" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-inline">
+            <button class="layui-btn layuiadmin-btn-forum-list" lay-submit lay-filter="search">
+                <i class="layui-icon layui-icon-search layuiadmin-button-btn"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="layui-card-body">
+    <div class="menus">
+        @if (hasManageRole)
+        {
+            <button class="layui-btn menu-item layui-btn-sm" data-type="createRole"><i class="layui-icon">&#xe654;</i>新增</button>
+            <button class="layui-btn menu-item layui-btn-sm layui-btn-danger" data-type="batchdel"><i class="layui-icon">&#xe640;</i>删除</button>
+        }
+        <button class="layui-btn menu-item layui-btn-sm" data-type="reload"><i class="layui-icon">&#xe669;</i>刷新</button>
+    </div>
+
+    <table id="table" lay-filter="table"></table>
+
+    <script type="text/html" id="toolbar">
+        @if (hasManageRole)
+        {
+            <a class="layui-btn layui-btn-xs" lay-event="edit"><i class="layui-icon layui-icon-edit"></i>编辑</a>
+            <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del"><i class="layui-icon layui-icon-delete"></i>删除</a>
+        }
+
+    </script>
+</div>
+
+
+<div id="edit_dialog" class="layui-form dialog dialog-card">
+    <div class="layui-form-item layui-card">
+        <div class="layui-card-body">
+            <label class="layui-form-label">角色名称：</label>
+            <div class="layui-input-block">
+                <input type="text" data-bind="value: edit().name" class="layui-input" />
+            </div>
+        </div>
+    </div>
+
+    <div class="layui-form-item">
+        <!-- ko foreach: $root.allPermissions -->
+        <div class="layui-card">
+            <div class="layui-card-header" data-bind="html:category"></div>
+            <div class="layui-card-body layui-row layui-col-space10">
+                <!-- ko foreach: permissions -->
+                <div class="layui-col-md3 layui-col-sm6">
+                    <input lay-filter="permission-check" type="checkbox" lay-skin="primary" data-bind="checked: $root.edit().permissionNames,attr:{title: description, name: name,value: name}">
+                </div>
+                <!-- /ko -->
+            </div>
+        </div>
+        <!-- /ko -->
+    </div>
+</div>

@@ -1,0 +1,357 @@
+﻿@using InQuant.Authorization.Permissions;
+@using InQuant.Localizations.DbStringLocalizer;
+@using Microsoft.Extensions.Options;
+
+@inject IPermissionHelper permissionHelper
+@inject IOptions<SqlLocalizationOptions> sqlLocalizationOptions;
+@{
+    ViewData["Title"] = "多语言词条维护";
+    Layout = "~/Views/Shared/_Content.cshtml";
+    var cultures = sqlLocalizationOptions.Value.SupportedCultures.Except(new[] { sqlLocalizationOptions.Value.DefaultCulture });
+    var hasManagePermission = await permissionHelper.HasPermission("ManageLocalization");
+}
+
+@section Head{
+    <style>
+        .resource-item {
+            height: 25px;
+            line-height: 25px;
+            padding-left: 5px;
+            overflow: hidden;
+        }
+
+            .resource-item span.layui-badge {
+                float: right;
+            }
+
+        .resource-item-selected {
+            background-color: #ededed;
+            font-weight: bold;
+        }
+
+        .resource-container {
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+    </style>
+}
+@section Scripts{
+    <script>
+        layui.config({
+            base: '/js/modules/'
+        }).use(['form', 'common', 'table', 'layer', 'http'], function () {
+            var $ = layui.$
+                , form = layui.form
+                , http = layui.http
+                , table = layui.table
+                , layer = layui.layer
+                , common = layui.common;
+
+            function ResourceSearchModel() {
+                var self = this;
+                self.keyword = ko.observable();
+            };
+            function LocalizationSeachModel() {
+                var self = this;
+                self.resourceKey = ko.observable();
+                self.key = ko.observable();
+            }
+
+            function ResourceModel(r) {
+                var self = this;
+                self.resourceKey = ko.observable(r ? r.resourceKey : '');
+                self.cnt = ko.observable(r ? r.cnt : '0');
+            }
+
+            function TextModel(r) {
+                var self = this;
+                self.culture = ko.observable(r ? r.culture : '');
+                self.text = ko.observable(r ? r.text : '');
+                self.hasTrans = ko.observable(r ? r.hasTrans : false);
+            }
+
+            function LocalizationModel(r) {
+                var self = this;
+                self.resourceKey = ko.observable(r ? r.resourceKey : '');
+                self.key = ko.observable(r ? r.key : '');
+                self.text = ko.observableArray(r ? (r.text || []) : []);
+            }
+
+            var viewModel = {
+                cultures: ko.observableArray(@Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(cultures))),
+                resourceSearch: ko.observable(new ResourceSearchModel()),
+                localizationSearch: ko.observable(new LocalizationSeachModel()),
+                resources: ko.observableArray(),
+                localizations: ko.observableArray(),
+                curResource: ko.observable(),
+                edit: ko.observable(new LocalizationModel()),
+
+                loadResources: function () {
+                    var self = this;
+                    var m = ko.mapping.toJS(self.resourceSearch);
+                    http.get('/api/localization/GetResources', m, function (data) {
+                        self.resources.removeAll();
+                        layui.each(data, function (idx, item) {
+                            self.resources.push(new ResourceModel(item));
+                        });
+                        if (self.resources().length > 0) {
+                            self.resourceClick(self.resources()[0]);
+                        }
+                    });
+                },
+                loadLocalizations: function () {
+                    var self = this;
+                    var m = ko.mapping.toJS(self.localizationSearch);
+
+                    http.get('/api/localization/GetLocalizations', m, function (data) {
+                        self.localizations.removeAll();
+                        layui.each(data, function (idx, item) {
+                            self.localizations.push(new LocalizationModel(item));
+                        });
+                    });
+                },
+                getHeight: function () {
+                    return $(window).height() - 152;
+                },
+                init: function () {
+                    var self = this;
+                    self.loadResources();
+                },
+                reload: function (toFirst) {
+                    this.loadResources();
+                },
+                resourceClick: function (item) {
+                    viewModel.curResource(item);
+                    viewModel.localizationSearch().resourceKey(item.resourceKey());
+                    viewModel.loadLocalizations();
+                },
+                getCultureCol: function (textArr, culture) {
+                    var arr = textArr().filter(function (item) { return item.culture == culture; });
+                    return arr && arr.length > 0 ? arr[0].text : '';
+                },
+                editLocalization: function (item) {
+                    var isCreate = !item;
+                    if (!isCreate) {
+                        viewModel.edit(item);
+                    }
+                    else {
+                        viewModel.edit(new LocalizationModel());
+                        viewModel.edit().text(viewModel.cultures().map(function (c) {
+                            var txt = new TextModel();
+                            txt.culture = c;
+                            return txt;
+                        }));
+                    }
+                    layer.open({
+                        type: 1
+                        , title: isCreate? '新增词条':'编辑词条'
+                        , content: $('#edit_dialog')
+                        , area: ['70%', '50%']
+                        , btn: ['保存', '取消']
+                        , success: function (layero, index) {
+                        }
+                        , yes: function (index, layero) {
+                            var m = ko.mapping.toJS(viewModel.edit);
+                            if ((m.resourceKey || '').trim().length == 0) {
+                                layer.msg('分类不能为空');
+                                return false;
+                            }
+                            if ((m.key || '').trim().length == 0) {
+                                layer.msg('词条不能为空');
+                                return false;
+                            }
+                            http.post('/api/localization/UpdateLocalization', m, function (data) {
+                                if (isCreate) viewModel.reload();
+                                else viewModel.loadLocalizations();
+                                layer.closeAll();
+                                layer.msg('保存成功');
+                            });
+                        }
+                    });
+
+                },
+                delLocalization: function (item) {
+                    layer.confirm('确认删除词条？', function () {
+                        http.get('/api/localization/DelLocalization', {
+                            resourceKey: item.resourceKey(),
+                            key: item.key
+                        }, function () {
+                            var rs= viewModel.resources().filter(function (res) {
+                                return res.resourceKey() == item.resourceKey();
+                            }); 
+                            if (rs.length > 0) {
+                                var r = rs[0];
+                                if (r.cnt() <= 1) {
+                                    viewModel.resources.remove(r);
+                                    if (viewModel.resources().length > 0) {
+                                        viewModel.resourceClick(viewModel.resources()[0]);
+                                    }
+                                }
+                                else r.cnt(r.cnt() - 1);
+                            }
+                            viewModel.localizations.remove(item);
+
+                            layer.msg('删除成功');
+                        })
+                    });
+                }
+            };
+
+            $('.resource-container').height(viewModel.getHeight());
+            $('.localization-container').height(viewModel.getHeight());
+            ko.applyBindings(viewModel);
+            viewModel.init();
+
+            common.fixKOBindIssue(form);
+
+            //事件
+            var active = {
+                create: function () {
+                    viewModel.editLocalization();
+                },
+                batchdel: function () {
+                    if (!viewModel.curResource()) {
+                        layer.msg('请选择要删除的分类');
+                        return false;
+                    }
+                    var resourceKey = viewModel.curResource().resourceKey();
+
+                    layer.confirm('确定删除分类？' , function (index) {
+                        http.get('/api/localization/DelResource', { resourceKey: resourceKey }, function () {
+                            viewModel.resources.remove(viewModel.curResource());
+                            viewModel.curResource(null);
+                            if (viewModel.resources().length>0)
+                                viewModel.resourceClick(viewModel.resources()[0]);
+                            layer.msg('删除成功');
+                        })
+                    });
+                },
+                reload: function () {
+                    viewModel.reload();
+                }
+            }
+
+            $('.layui-btn.menu-item').on('click', function () {
+                var type = $(this).data('type');
+                active[type] ? active[type].call(this) : '';
+            });
+
+            form.on('submit(resourceSearch)', function () {
+                viewModel.loadResources();
+            })
+            form.on('submit(localizationSearch)', function () {
+                viewModel.loadLocalizations();
+            })
+        });
+
+    </script>
+}
+
+<div class="layui-row layui-col-space10">
+    <div class="layui-col-md12">
+        <div class="layui-card">
+            <div class="menus layui-card-body">
+                @if (hasManagePermission)
+                {
+                    <button class="layui-btn menu-item layui-btn-sm" data-type="create"><i class="layui-icon">&#xe654;</i>新增词条</button>
+                    <button class="layui-btn menu-item layui-btn-sm layui-btn-danger" data-type="batchdel"><i class="layui-icon">&#xe640;</i>删除分类</button>
+                }
+                <button class="layui-btn menu-item layui-btn-sm" data-type="reload"><i class="layui-icon">&#xe669;</i>刷新</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="layui-col-md3 layui-col-sm5">
+        <div class="layui-card">
+            <div class="layui-card-header layui-form" style="padding-top:6px;padding-bottom:6px;line-height:inherit !important">
+                <div class="layui-form-item">
+                    <div class="layui-input-inline">
+                        <input type="text" data-bind="value: resourceSearch().keyword" placeholder="输入关键字搜索分类" class="layui-input" />
+                    </div>
+                    <div class="layui-input-inline" style="width:auto">
+                        <button class="layui-btn" lay-submit lay-filter="resourceSearch">
+                            <i class="layui-icon layui-icon-search layuiadmin-button-btn"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="layui-card-body resource-container">
+                <!-- ko foreach: resources-->
+                <div class="resource-item">
+                    <a href="javascript:void(0);" data-bind="text: resourceKey,click: $root.resourceClick,css: {'resource-item-selected': $data==$root.curResource()}"></a>
+                    <span class="layui-badge layui-bg-gray" data-bind="text: cnt"></span>
+                </div>
+                <!-- /ko -->
+            </div>
+        </div>
+    </div>
+    <div class="layui-col-md9 layui-col-sm7">
+        <div class="layui-card">
+            <div class="layui-card-header layui-form" style="padding-top:6px;padding-bottom:6px;line-height:inherit !important">
+                <div class="layui-form-item">
+                    <div class="layui-input-inline">
+                        <input type="text" data-bind="value: localizationSearch().key" placeholder="输入关键字搜索词条" class="layui-input" />
+                    </div>
+                    <div class="layui-input-inline" style="width:auto">
+                        <button class="layui-btn" lay-submit lay-filter="localizationSearch">
+                            <i class="layui-icon layui-icon-search layuiadmin-button-btn"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="layui-card-body localization-container">
+                <table class="layui-table">
+                    <thead>
+                        <tr>
+                            <th>词条</th>
+                            <!-- ko foreach: cultures-->
+                            <th data-bind="text:$data"></th>
+                            <!-- /ko -->
+                            <th style="width:122px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- ko foreach: localizations -->
+                        <tr>
+                            <td data-bind="text: key"></td>
+                            <!-- ko foreach: $root.cultures-->
+                            <td data-bind="text: $root.getCultureCol($parent.text, $data)"></td>
+                            <!-- /ko -->
+                            <td>
+                                @if (hasManagePermission)
+                                {
+                                    <a class="layui-btn layui-btn-xs" data-bind="click: $root.editLocalization"><i class="layui-icon layui-icon-edit"></i>编辑</a>
+                                    <a class="layui-btn layui-btn-danger layui-btn-xs" data-bind="click: $root.delLocalization"><i class="layui-icon layui-icon-delete"></i>删除</a>
+                                }
+                            </td>
+                        </tr>
+                        <!-- /ko -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="edit_dialog" class="layui-form dialog">
+    <div class="layui-form-item">
+        <label class="layui-form-label">分类</label>
+        <div class="layui-input-block">
+            <input type="text" data-bind="value: edit().resourceKey" class="layui-input" />
+        </div>
+    </div>
+    <div class="layui-form-item">
+        <label class="layui-form-label">词条</label>
+        <div class="layui-input-block">
+            <input type="text" data-bind="value: edit().key" class="layui-input" />
+        </div>
+    </div>
+    <!-- ko foreach: edit().text -->
+    <div class="layui-form-item">
+        <label class="layui-form-label" data-bind="text: culture"></label>
+        <div class="layui-input-block">
+            <input type="text" data-bind="value: text" class="layui-input" />
+        </div>
+    </div>
+    <!-- /ko -->
+</div>

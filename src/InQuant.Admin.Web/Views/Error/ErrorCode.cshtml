@@ -1,0 +1,19 @@
+﻿@model InQuant.Admin.Web.Models.ErrorViewModel;
+@{
+    Layout = null;
+
+}
+
+<!DOCTYPE html>
+
+<html>
+<head>
+    <meta name="viewport" content="width=device-width" />
+    <title>Error</title>
+</head>
+<body>
+    <p>程序出现错误，请联系管理员!</p>
+    <p>错误代码：@ViewBag.code</p>
+    <p>requestID: @Model.RequestId</p>
+</body>
+</html>

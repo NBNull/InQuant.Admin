@@ -1,0 +1,35 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
+    <link rel="stylesheet" href="~/css/font.css">
+    <link rel="stylesheet" href="~/css/xadmin.css">
+    <title>@ViewData["Title"]</title>
+
+    @RenderSection("Head", required: false)
+
+</head>
+<body>
+    @RenderSection("Nav", required: false)
+
+    <div class="layui-fluid">
+        @RenderBody()
+    </div>
+
+    <script src="~/lib/layui/layui.js" charset="utf-8"></script>
+    <script src="~/js/xadmin.js"></script>
+    <script src="https://ajax.aspnetcdn.com/ajax/knockout/knockout-3.4.2.js"></script>
+    <script src="~/lib/knockout/knockout.mapping.js"></script>
+    @*<script src="https://cdnjs.cloudflare.com/ajax/libs/knockout-validation/2.0.3/knockout.validation.min.js"></script>
+    <script src="~/lib/knockout/zh-CN.js"></script>*@
+
+    @RenderSection("Scripts", required: false)
+</body>
+</html>

@@ -1,0 +1,46 @@
+﻿@using InQuant.Navigation;
+@using Microsoft.AspNetCore.Mvc.Infrastructure;
+
+@inject INavigationManager _navigationManager
+@inject IActionContextAccessor _actionContextAccessor
+@{
+    var menus = _navigationManager.BuildMenu("", _actionContextAccessor.ActionContext).OrderBy(x => float.Parse(x.Position ?? "1"));
+}
+@functions{
+    string RenderMenu(MenuItem m)
+    {
+        if (m.LocalNav)
+        {
+            return $@"<li>
+                        <a _href=""{m.Href}"">
+                              <i class=""iconfont"">&#xe6a7;</i>
+                            <cite>{m.Text.Value}</cite>
+                        </a>
+                    </li>";
+        }
+        else
+        {
+            return $@"<li>
+                        <a href=""javascript:void(0);"">
+                             <i class=""iconfont"">&#xe723;</i>
+                                <cite>{m.Text.Value}</cite>
+                            <i class=""iconfont nav_right"">&#xe697;</i>
+                        </a>
+                         <ul class=""sub-menu"">
+                            {string.Join("", m.Items?.OrderBy(x => float.Parse(x.Position))?.Select(x => RenderMenu(x)))}
+                        </ul>
+                    </li> ";
+        }
+    }
+}
+
+<div class="left-nav">
+    <div id="side-nav">
+        <ul id="nav">
+            @foreach (var m in menus)
+            {
+                @Html.Raw(RenderMenu(m));
+            }
+        </ul>
+    </div>
+</div>

@@ -1,0 +1,22 @@
+﻿@using System.Security.Claims;
+
+<div class="container">
+    <div class="logo"><a href="/home/index">InQuant后台管理系统</a></div>
+    <div class="left_open">
+        <i title="展开左侧栏" class="iconfont">&#xe699;</i>
+    </div>
+    <ul class="layui-nav left fast-add" lay-filter="">
+        <li class="layui-nav-item">
+
+        </li>
+    </ul>
+    <ul class="layui-nav right" lay-filter="">
+        <li class="layui-nav-item">
+            <a href="javascript:;">@(Context.User.Claims.FirstOrDefault(x => x.Type == ClaimTypes.Name)?.Value ?? "未登录")</a>
+            <dl class="layui-nav-child">
+                <dd><a class="logout" href="javascript:void(0);">退出</a></dd>
+            </dl>
+        </li>
+    </ul>
+
+</div>

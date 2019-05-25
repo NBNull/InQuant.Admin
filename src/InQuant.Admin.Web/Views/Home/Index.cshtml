@@ -1,0 +1,17 @@
+﻿
+@{
+    ViewData["Title"] = "首页";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="layui-tab tab" lay-filter="xbs_tab" lay-allowclose="false">
+    <ul class="layui-tab-title">
+        <li class="home"><i class="layui-icon">&#xe68e;</i>首页</li>
+    </ul>
+    <div class="layui-tab-content">
+        <div class="layui-tab-item layui-show">
+            <iframe src='/Home/Dashboard' frameborder="0" scrolling="yes" class="x-iframe"></iframe>
+        </div>
+    </div>
+</div>
+
